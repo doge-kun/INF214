@@ -1,0 +1,66 @@
+Question 1:
+Assume the following shared variables:
+
+int x, y, z;
+
+Split the following program into blocks of code that appear atomic. Is your subdivision unique?
+
+x = 0; write
+y = y + 1; read, write
+int a = x + y; read, read
+a = a * 100; appear atomic
+a = sin(a); appear atomic
+z = a; write
+
+
+Question 2
+For each of the cases below:
+
+    analyze whether each concurrent process has the amo-property.
+    decide whether the processes are interfering or not.
+
+Assume that x == y == 0 are shared variables, r local.
+
+    co x = x + 1; || y = x + 1; oc		//x: read, write | y: read, write | x interferes with y
+    co x = y + 1; || y = x + 1; oc		//x: read from y and writes to x | y: reads from x and writes to y | inteference
+    co x = y + 1; || x = y + 3; || y = 1; oc	//x: read from y and write to x | x: read from y and write to x | y: writes to y | interference 
+    co x = y + 1; || r = y - 1; || y = 5; oc	//first process reads from y which is written to by third process | interferenceI
+
+Answer the following questions:
+
+    After co r = x - x; || p1; || ... || pn; oc, is r == 0?	//No, cause other processes can alter the value of x before the first process can read
+
+    Are these two programs the same?				//No, same reason as above
+        co x = x; || p1; || ... || pn; oc
+        co p1; || ... || pn; oc
+
+
+Question 3
+Assume shared variables int a = 0, b = 0; and these two concurrently running programs:
+
+a = 1;
+if (b == 0) { cout << "A"; }
+
+b = 1;
+if (a == 0) { cout << "B"; }
+
+How many (fine-grained) atomic operations to the shared variables do each of the two processes have? We assume here that blocks that do printing are atomic (which of course is not the case).
+//Process one writes to a and reads from b
+//Process two writes to b and reads from a
+//If printing is atomic as well, both processes will have 3 atomic operations
+
+How many possible sequential consistent interleavings are there for these operations? Can you list them?
+//20 (look at model in notes1). No I cant list them
+
+How many possible interleavings are there  for those operations? Can you list them?
+//362880 (look at model in notes1). No I cant and I wont.
+
+What are the possible outcomes of the program in a typical modern computer?
+//I dont know
+
+
+
+
+
+
+
