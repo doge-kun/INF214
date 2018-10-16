@@ -1,22 +1,18 @@
 // Viet Hoang Nguyen
 
-#include "bank.hpp"
+#include "alang.hpp"
 #include <chrono>
 #include <thread>
+#include <queue>
 
 class Bank : monitor {
     cond cv;
-    int balance;
-    std::queue<int> transactions;
-    unsigned int transaction_id;
-    const bool debug;
+    int balance = 0;
+    std::queue<std::thread::id> transactionIDs;
+    //unsigned int transactionID = 0;
+    //const bool debug = true;
 
 public:
-    Bank(bool debug) : debug(debug) {
-        balance = 0;
-        transaction_id = 0;
-    }
-
     int deposit(int amount) {
         SYNC;
         balance += amount;
@@ -25,39 +21,60 @@ public:
     }
 
     int withdraw(int amount) {
-        // Get an id
-        int id;
+        //The following commented out code gets stuck if the withdraw requests are not executed in the correct order
+        //I have thus just commented it out and tried another solution. It works otherwise.
+        /*int id;
         {
             SYNC;
-            id = transaction_id++;
-            if (debug) alang::logl("Request for ", amount, " got id ", id);
+            id = transactionID++;
+            if (debug) {
+                alang::logl("Request to withdraw $", amount, " has been assigned the queue #", id);
+            }
             transactions.push(id);
         }
 
-        // Try until ok
         while (true) {
             SYNC;
 
-            if (debug) alang::logl(id, " trying to withdraw.");
+            if (debug) {
+                alang::logl("Queuer #", id, " is trying to withdraw.");
+            }
 
-            // Check if ok to withdraw
             bool balance_too_low = balance < amount;
             bool not_my_turn = transactions.front() != id;
 
             if (balance_too_low || not_my_turn) {
-                if (debug) alang::logl(id, balance_too_low
-                                           ? " failed, but not enough money. Waiting."
-                                           : " failed, but not first in queue. Waiting.");
+                if (debug) {
+                    alang::logl("Queuer #", id, balance_too_low
+                                                ? " failed, not enough money in bank. Waiting.\n"
+                                                : " failed, not first in queue. Waiting.\n");
+                }
                 wait(cv);
                 continue;
             }
 
-            if (debug) alang::logl(id, " succeeded!");
+            if (debug) {
+                alang::logl("Queuer #", id, " succeeded!\n");
+            }
             transactions.pop();
             signal(cv);
             balance -= amount;
             return balance;
-        }
+        }*/
+        SYNC;
+
+        std::thread::id id = std::this_thread::get_id();
+        transactionIDs.push(id);
+
+        while (id != transactionIDs.front() || balance < amount) {
+            wait(cv);
+        };
+
+        balance -= amount;
+        transactionIDs.pop();
+        signal(cv);
+
+        return balance;
     }
 
     int getBalance() {
@@ -66,77 +83,51 @@ public:
     }
 };
 
-namespace Test {
-  bool test_fifo();
-  bool test_deposit(int N);
-  bool test_withdraw(int N);
-  bool test_deposit_withdraw(int N);
-}
-
 int main(void) {
-  const int N = 10000;
+  const int C = 10;
+  Bank bank;
+  {
+      bank.deposit(200);
+      alang::logl("Depositing $200. \nBalance is: ", bank.getBalance(), "\n");
 
-  Test::test_fifo();
-  Test::test_deposit(N);
-  Test::test_withdraw(N);
-  Test::test_deposit_withdraw(N);
+      processes ps;
 
-  alang::logl("Tests passed");
-}
+      ps += [&bank] { bank.withdraw(300); }; alang::sleep_ms(500);
+      ps += [&bank] { bank.withdraw(100); }; alang::sleep_ms(500);
 
-namespace Test {
-  bool test_fifo() {
-    Bank bank(true);
-    bank.deposit(200);
+      assert(bank.getBalance() == 200);
+      alang::logl("Balance should sill be $200. \nGetting balance: ", bank.getBalance(), "\n");
 
-    processes ps;
+      alang::logl("Depositing $100.\n");
+      bank.deposit(100);
+      alang::sleep_ms(100);
+      assert(bank.getBalance() == 0);
 
-    // Start two processes, delay between both
-    ps += [&bank] { bank.withdraw(300); }; alang::sleep_ms(500);
-    ps += [&bank] { bank.withdraw(100); }; alang::sleep_ms(500);
+      alang::logl("Depositing $100.\n");
+      bank.deposit(100);
+      alang::sleep_ms(100);
+      assert(bank.getBalance() == 0);
 
-    // Nobody should have taken yet
-    assert(bank.get_balance() == 200);
+      alang::logl("-------Depositing and then withdrawing.-------\n");
+      for (int i : range(0, C)) {
+          ps += [&bank] { bank.deposit(1); };
+      }
+      for (int i : range(0, C)) {
+          ps += [&bank] { bank.withdraw(1); };
+      }
 
-    alang::logl("Depositing 100");
-    bank.deposit(100); // Deposit
-    alang::sleep_ms(100); // Sleep to give a thread time to withdraw
-    assert(bank.get_balance() == 0); // First should have taken
-
-    alang::logl("Depositing 100");
-    bank.deposit(100); // Deposit again
-    alang::sleep_ms(100); // Sleep to give a thread time to withdraw
-    assert(bank.get_balance() == 0); // Second should have taken
-    return true;
+      alang::logl("-------Deposits and withdraws at the same time.-------\n");
+      for (int i : range(0, C)) {
+          ps += [&bank] { bank.withdraw(1); };
+          ps += [&bank] { bank.withdraw(1); };
+          ps += [&bank] { bank.deposit(3); };
+      }
   }
 
-  bool test_deposit(int N) {
-    Bank bank;
-    processes ps;
-    for (int i : range(0, N)) {
-      ps += [&bank]{ bank.deposit(1); };
+    alang::logl("Balance is ", bank.getBalance());
+    if(bank.getBalance() == C) {
+        alang::logl("Pass!");
+    } else {
+        alang::logl("Fail!");
     }
-    return bank.get_balance() == N;
-  }
-
-  bool test_withdraw(int N) {
-    Bank bank;
-    bank.deposit(N);
-    processes ps;
-    for (int i : range(0, N)) {
-      ps += [&bank] { bank.withdraw(1); };
-    }
-    return bank.get_balance() == 0;
-  }
-
-  bool test_deposit_withdraw(int N) {
-    Bank bank;
-    processes ps;
-    for (int i : range(0, N)) {
-      ps += [&bank] { bank.withdraw(1); };
-      ps += [&bank] { bank.deposit(3); };
-      ps += [&bank] { bank.withdraw(1); };
-    }
-    return bank.get_balance() == N;
-  }
 }
