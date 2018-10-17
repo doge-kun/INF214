@@ -8,9 +8,9 @@
 class Bank : monitor {
     cond cv;
     int balance = 0;
-    std::queue<std::thread::id> transactionIDs;
-    //unsigned int transactionID = 0;
-    //const bool debug = true;
+    std::queue<int> transactions;
+    unsigned int transactionID = 0;
+    const bool debug = true;
 
 public:
     int deposit(int amount) {
@@ -21,9 +21,7 @@ public:
     }
 
     int withdraw(int amount) {
-        //The following commented out code gets stuck if the withdraw requests are not executed in the correct order
-        //I have thus just commented it out and tried another solution. It works otherwise.
-        /*int id;
+        int id;
         {
             SYNC;
             id = transactionID++;
@@ -57,24 +55,10 @@ public:
                 alang::logl("Queuer #", id, " succeeded!\n");
             }
             transactions.pop();
-            signal(cv);
+            signal_all(cv);
             balance -= amount;
             return balance;
-        }*/
-        SYNC;
-
-        std::thread::id id = std::this_thread::get_id();
-        transactionIDs.push(id);
-
-        while (id != transactionIDs.front() || balance < amount) {
-            wait(cv);
-        };
-
-        balance -= amount;
-        transactionIDs.pop();
-        signal(cv);
-
-        return balance;
+        }
     }
 
     int getBalance() {
